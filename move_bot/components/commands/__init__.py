@@ -1,0 +1,2 @@
+from move_bot.components.commands.configure_client_details import configure_client_details
+from move_bot.components.commands.configure_access_token import configure_access_token

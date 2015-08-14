@@ -1,0 +1,7 @@
+[connection]
+jid = rerobins@labware/movebot
+password = pass
+
+[muc]
+room = rhobot@conference.labware
+room_nick = movebot
