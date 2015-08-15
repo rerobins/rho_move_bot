@@ -1,5 +1,7 @@
 import logging
 from sleekxmpp.plugins.base import base_plugin
+from move_bot.components.configuration_enums import IDENTIFIER_KEY, CLIENT_SECRET_KEY
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +34,8 @@ class ConfigureClientDetails(base_plugin):
         """
         form = self.xmpp['xep_0004'].make_form()
 
-        previous_identifier = self.xmpp['rho_bot_configuration'].get_value('identifier', 'unset')
-        previous_secret = self.xmpp['rho_bot_configuration'].get_value('secret', 'unset')
+        previous_identifier = self.xmpp['rho_bot_configuration'].get_value(IDENTIFIER_KEY, 'unset')
+        previous_secret = self.xmpp['rho_bot_configuration'].get_value(CLIENT_SECRET_KEY, 'unset')
 
         form.add_field(var='client_id', ftype='text-single', label='Client Identifier',
                        desc='Client Identifier from Move API Console',
@@ -63,7 +65,7 @@ class ConfigureClientDetails(base_plugin):
 
         logger.info('Secret: %s, Identifier: %s' % (secret, identifier))
 
-        self.xmpp['rho_bot_configuration'].merge_configuration({'identifier': identifier, 'secret': secret})
+        self.xmpp['rho_bot_configuration'].merge_configuration({IDENTIFIER_KEY: identifier, CLIENT_SECRET_KEY: secret})
 
         session['has_next'] = False
         session['payload'] = None

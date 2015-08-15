@@ -1,1 +1,1 @@
-__author__ = 'rerobins'
+from move_bot.components.update_service import update_service

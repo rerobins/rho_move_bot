@@ -11,6 +11,7 @@ configuration.load_file(options.filename)
 bot = RhoBot()
 bot.register_plugin('configure_client_details', module='move_bot.components.commands')
 bot.register_plugin('configure_access_token', module='move_bot.components.commands')
+bot.register_plugin('update_service', module='move_bot.components.update_service')
 
 # Connect to the XMPP server and start processing XMPP stanzas.
 if bot.connect():

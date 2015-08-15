@@ -1,6 +1,7 @@
 import logging
 import moves
 from sleekxmpp.plugins.base import base_plugin
+from move_bot.components.configuration_enums import IDENTIFIER_KEY, CLIENT_SECRET_KEY, CLIENT_TOKEN_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,8 @@ class ConfigureAccessToken(base_plugin):
         """
         form = self.xmpp['xep_0004'].make_form()
 
-        previous_identifier = self.xmpp['rho_bot_configuration'].get_value('identifier', 'unset')
-        previous_secret = self.xmpp['rho_bot_configuration'].get_value('secret', 'unset')
-        previous_token = self.xmpp['rho_bot_configuration'].get_value('token', '')
+        previous_identifier = self.xmpp['rho_bot_configuration'].get_value(IDENTIFIER_KEY, 'unset')
+        previous_secret = self.xmpp['rho_bot_configuration'].get_value(CLIENT_SECRET_KEY, 'unset')
 
         moves_client = moves.MovesClient()
         moves_client.client_id = previous_identifier
@@ -45,10 +45,10 @@ class ConfigureAccessToken(base_plugin):
                        desc='Authorization URL',
                        required=True,
                        value=moves_client.build_oauth_url())
-        form.add_field(var='token', ftype='text-single', label='Client Token',
+        form.add_field(var='token', ftype='text-single', label='Client Token URL Response',
                        desc='Client Token',
                        required=True,
-                       value=previous_token)
+                       value='')
 
         initial_session['payload'] = form
         initial_session['next'] = self._process_initial_form
@@ -76,10 +76,9 @@ class ConfigureAccessToken(base_plugin):
         # Attempt to get the proper tokens and store them in the database.
         parts = urlparse(token)
         code = parse_qs(parts.query)['code'][0]
-        self.xmpp['rho_bot_configuration'].merge_configuration({'code': code})
         mc.access_token = mc.get_oauth_token(code)
 
-        self.xmpp['rho_bot_configuration'].merge_configuration({'access_token': mc.access_token})
+        self.xmpp['rho_bot_configuration'].merge_configuration({CLIENT_TOKEN_KEY: mc.access_token})
         # TODO: Submit merge request to get the refresh token as well
         #self.xmpp['rho_bot_configuration'].merge_configuratoin({'refresh_token': mc.refresh_token})
 
