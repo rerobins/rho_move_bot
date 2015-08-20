@@ -1,6 +1,7 @@
 import logging
 from sleekxmpp.plugins.base import base_plugin
 from move_bot.components.configuration_enums import IDENTIFIER_KEY, CLIENT_SECRET_KEY
+from move_bot.components.events import OAUTH_DETAILS_UPDATED
 
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,8 @@ class ConfigureClientDetails(base_plugin):
         session['has_next'] = False
         session['payload'] = None
         session['next'] = None
+
+        self.xmpp.event(OAUTH_DETAILS_UPDATED)
 
         return session
 
