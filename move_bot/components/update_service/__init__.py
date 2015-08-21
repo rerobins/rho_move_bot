@@ -1,0 +1,1 @@
+from move_bot.components.update_service.service import update_service
