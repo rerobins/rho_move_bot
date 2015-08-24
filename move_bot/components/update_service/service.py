@@ -4,7 +4,6 @@ Component of the move bot that will load up the data from the update service.
 import moves
 from rdflib.namespace import Namespace, FOAF
 from rhobot.namespace import RHO
-from move_bot.test_data.robert_01 import data as test_data
 from rhobot.components.storage import StoragePayload
 from sleekxmpp.plugins.base import base_plugin
 from rhobot.components.configuration import BotConfiguration
@@ -17,6 +16,9 @@ logger = logging.getLogger(__name__)
 WGS84_POS_NAMESPACE = Namespace('http://www.w3.org/2003/01/geo/wgs84_pos#')
 
 class UpdateService(base_plugin):
+    """
+    Service that will create a group of promises that can be used to insert the data from the moves-app.com API.
+    """
 
     name = 'update_service'
     description = 'Service that will update data store from move api'
@@ -31,9 +33,23 @@ class UpdateService(base_plugin):
         # self.xmpp.add_event_handler(OAUTH_DETAILS_UPDATED, self._configuration_updated)
 
     def _configuration_updated(self, *args, **kwargs):
-        self.xmpp['rho_bot_scheduler'].schedule_task(self._start, delay=5.0, repeat=False)
+        """
+        Callback when the configuration details have been received by the bot.
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        self.xmpp['rho_bot_scheduler'].schedule_task(self._start, delay=600.0, repeat=False)
 
     def _start(self):
+        """
+        Entry point.
+
+        Generates the basic chain of promises that will be used.  Each of the promises should return the session
+        variable that will be updated by all of the individual tasks so that each of the following tasks will have
+        access to all of the work that has been done before it.
+        :return:
+        """
         promise = self.xmpp['rho_bot_scheduler'].defer(self._create_session)
         promise = promise.then(self._build_client)
         promise = promise.then(self._get_owner)
@@ -41,10 +57,26 @@ class UpdateService(base_plugin):
         promise = promise.then(self._process_data)
 
         # Reschedule the whole thing again
-        promise.then(self._configuration_updated)
+        promise.then(self._configuration_updated, self._configuration_updated)
+
+    def _create_session(self):
+        """
+        Creates the session variable that will be used throughout all of the promises.
+        :return: session dictionary
+        """
+        logger.debug('Creating session')
+        return dict()
 
     def _build_client(self, session):
-        logger.info('Creating the client')
+        """
+        Create the client.
+
+        Look into the configuration details of the bot and get the attributes required to access the data API.  This
+        will also check to see if there is a valid data store for storing the data.
+        :param session: session variable
+        :return:
+        """
+        logger.debug('Creating the client')
         configuration = self.xmpp['rho_bot_configuration'].get_configuration()
         identifier = configuration.get(IDENTIFIER_KEY, None)
         secret = configuration.get(CLIENT_SECRET_KEY, None)
@@ -69,18 +101,19 @@ class UpdateService(base_plugin):
 
         # if all is good with the world, start executing the update thread.
         # Determine if the token should be updated or not
-        logger.info('Token Validity Information: %s' % token_validity)
+        logger.debug('Token Validity Information: %s' % token_validity)
 
         session['client'] = client
 
         return session
 
-    def _create_session(self):
-        logger.info('Creating session')
-        return dict()
-
     def _get_owner(self, session):
-        logger.info('Getting the owner information from other bot')
+        """
+        Look up the owner information from one of the other bots in the channel.
+        :param session: session variable
+        :return:
+        """
+        logger.debug('Getting the owner information from other bot')
         payload = StoragePayload(self.xmpp['xep_0004'].make_form(ftype='form'))
         payload.add_type(FOAF.Person, RHO.Owner)
 
@@ -97,20 +130,31 @@ class UpdateService(base_plugin):
         return self.xmpp['rho_bot_rdf_publish'].send_out_request(payload).then(set_owner_session)
 
     def _get_data(self, session):
-        logger.info('Task Executing: %s' % session)
+        """
+        Retrieve the data from the API service and store them in the session variable.
+        :param session:
+        :return:
+        """
+        logger.debug('Task Executing: %s' % session)
         session['segments'] = []
 
         parameters = dict(pastDays=7)
 
-        #results = self.client.user_places_daily(**parameters)
-        results = test_data
+        last_update = self.xmpp['rho_bot_configuration'].get_value(key='last_update', default=None,
+                                                                   persist_if_missing=False)
+        if last_update:
+            parameters['updatedSince'] = last_update
+            session['last_update'] = last_update
 
-        logger.info('Update Results: %s' % results)
+        results = session['client'].user_places_daily(**parameters)
+
+        logger.debug('Update Results: %s' % results)
 
         for date_result in results:
             segments = date_result['segments']
-            date = date_result['date']
-            session['last_update'] = date_result['lastUpdate']
+
+            if session.get('last_update', None) is None or session['last_update'] < date_result['lastUpdate']:
+                session['last_update'] = date_result['lastUpdate']
 
             if segments is not None:
                 for segment in segments:
@@ -119,29 +163,46 @@ class UpdateService(base_plugin):
         return session
 
     def _process_data(self, session):
-
+        """
+        Break apart each of the data segments into callables for execution.  This should serialize all of the data to
+        be processed, but instead of executing in a giant execution, will break apart the code so that other events can
+        be processed by the bot.
+        :param session: session variable.
+        :return: promise that will be resolved once all of the segments have been processed.
+        """
         session['promise'] = self.xmpp['rho_bot_scheduler'].promise()
 
         promise = None
         for segment in session['segments']:
             if not promise:
-                promise = self.xmpp['rho_bot_scheduler'].defer(self._generate_processor(segment, session))
+                execution = ProcessSegment(segment, session['owner'], self.xmpp['rho_bot_scheduler'],
+                                           self.xmpp['rho_bot_storage_client'], self.xmpp['rho_bot_rdf_publish'])
+                promise = self.xmpp['rho_bot_scheduler'].defer(execution)
             else:
-                promise = promise.then(self._generate_processor(segment, session))
+                execution = ProcessSegment(segment, session['owner'], self.xmpp['rho_bot_scheduler'],
+                                           self.xmpp['rho_bot_storage_client'], self.xmpp['rho_bot_rdf_publish'])
+                promise = promise.then(execution)
 
         # Save off the configuration details from this update cycle, and then resolve or reject the session promise.
-        promise.then(lambda s: self._update_configuration(session)).then(lambda s: session['promise'].resolved(session),
-                                                                         lambda s: session['promise'].rejected(s))
+        if promise is not None:
+            promise.then(
+                lambda s: self._update_configuration(session)).then(lambda s: session['promise'].resolved(session),
+                                                                    lambda s: session['promise'].rejected(s))
+        else:
+            session['promise'].resolved(session)
 
         return session['promise']
 
-    def _generate_processor(self, segment, session):
-
-        return ProcessSegment(segment, session['owner'], self.xmpp['rho_bot_scheduler'],
-                              self.xmpp['rho_bot_storage_client'])
-
     def _update_configuration(self, session):
-        logger.info('TODO: Set the last update time to be: %s' % session['last_update'])
+        """
+        Used to update the internal configuration details of the bot so that data isn't pulled down that hasn't been
+        updated.
+        :param session: session variable.
+        :return: session variable
+        """
+        self.xmpp['rho_bot_configuration'].merge_configuration({'last_update': session['last_update']})
+
+        return session
 
 
 update_service = UpdateService
