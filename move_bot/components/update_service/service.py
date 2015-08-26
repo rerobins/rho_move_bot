@@ -24,6 +24,9 @@ class UpdateService(base_plugin):
     description = 'Service that will update data store from move api'
     dependencies = {'rho_bot_scheduler', 'rho_bot_configuration', 'rho_bot_rdf_publish', }
 
+    _delay = 600.0
+    _past_days = 31
+
     def plugin_init(self):
         """
         Initialize the plugin.
@@ -39,7 +42,8 @@ class UpdateService(base_plugin):
         :param kwargs:
         :return:
         """
-        self.xmpp['rho_bot_scheduler'].schedule_task(self._start, delay=600.0, repeat=False)
+        logger.debug('Rescheduling task for time: %s' % self._delay)
+        self.xmpp['rho_bot_scheduler'].schedule_task(self._start, delay=self._delay, repeat=False)
 
     def _start(self):
         """
@@ -138,7 +142,7 @@ class UpdateService(base_plugin):
         logger.debug('Task Executing: %s' % session)
         session['segments'] = []
 
-        parameters = dict(pastDays=7)
+        parameters = dict(pastDays=self._past_days)
 
         last_update = self.xmpp['rho_bot_configuration'].get_value(key='last_update', default=None,
                                                                    persist_if_missing=False)

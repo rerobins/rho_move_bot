@@ -9,3 +9,8 @@ MOVES_SEGMENT = Namespace('urn:moves-app.com:segment:')
 
 EVENT = Namespace('http://purl.org/NET/c4dm/event.owl#')
 
+SCHEMA = Namespace('http://schema.org/')
+
+WGS_84 = Namespace('http://www.w3.org/2003/01/geo/wgs84_pos#')
+
+LOCATION = Namespace('http://www.w3.org/ns/locn#')
