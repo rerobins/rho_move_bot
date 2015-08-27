@@ -118,7 +118,7 @@ class UpdateService(base_plugin):
         :return:
         """
         logger.debug('Getting the owner information from other bot')
-        payload = StoragePayload(self.xmpp['xep_0004'].make_form(ftype='form'))
+        payload = StoragePayload()
         payload.add_type(FOAF.Person, RHO.Owner)
 
         def set_owner_session(owner):

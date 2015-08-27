@@ -4,6 +4,7 @@ Encapsulate the methodology to process a segment from the moves-api.
 Builds rdf triples based on:
 http://motools.sourceforge.net/event/event.html
 """
+from rhobot.components.storage import StoragePayload
 from move_bot.components.namespace import EVENT, MOVES_SEGMENT, WGS_84, LOCATION, SCHEMA
 from rdflib.namespace import RDFS, DC
 import logging
@@ -52,7 +53,7 @@ class ProcessSegment:
         self._promise = self._scheduler.promise()
 
         # Check in the database to see if there is anything that currently has the segment defined in it
-        payload = self._storage_client.create_payload()
+        payload = StoragePayload()
         payload.add_type(EVENT.Event)
         payload.add_property(RDFS.seeAlso, MOVES_SEGMENT[self._segment['startTime']])
 
@@ -60,8 +61,8 @@ class ProcessSegment:
 
         task_promise = self._scheduler.defer(self._start_process).then(self._find_place)
 
-        if result.results():
-            self._node_id = result.results()[0].about
+        if result.results:
+            self._node_id = result.results[0].about
             task_promise = task_promise.then(self._update_node)
         else:
             task_promise = task_promise.then(self._create_node)
@@ -89,7 +90,7 @@ class ProcessSegment:
         :return:
         """
         if self._segment['place']['type'] == 'foursquare':
-            location_request = self._storage_client.create_payload()
+            location_request = StoragePayload()
             location_request.add_type(WGS_84.SpatialThing)
             location_request.add_property(RDFS.seeAlso,
                                           'foursquare://venues/%s' % self._segment['place']['foursquareId'])
@@ -98,14 +99,14 @@ class ProcessSegment:
 
         elif self._segment['place']['type'] == 'home':
             # Ask the owner if it has an address
-            get_request = self._storage_client.create_payload()
+            get_request = StoragePayload()
             get_request.about = self._owner
             result = self._storage_client.get_node(get_request)
 
-            if str(LOCATION.address) in result.references():
-                session['location'] = result.references()[str(LOCATION.address)]
+            if str(LOCATION.address) in result.references:
+                session['location'] = result.references[str(LOCATION.address)]
             elif str(SCHEMA.homeLocation):
-                session['location'] = result.references()[str(SCHEMA.homeLocation)]
+                session['location'] = result.references[str(SCHEMA.homeLocation)]
             else:
                 session['location'] = []
 
@@ -143,10 +144,14 @@ class ProcessSegment:
         """
         logger.debug('Creating Node')
         payload = self._convert_segment_to_payload(session)
-
         result = self._storage_client.create_node(payload)
 
-        return result.results()[0].about
+        storage_payload = self._storage_client.create_payload()
+        storage_payload.about = result.results[0].about
+        storage_payload.add_type(EVENT.Event)
+        self._publisher.publish_create(storage_payload)
+
+        return result.results[0].about
 
     def _update_node(self, session):
         """
@@ -156,17 +161,21 @@ class ProcessSegment:
         logger.info('Updating Node')
         payload = self._convert_segment_to_payload(session)
         payload.about = self._node_id
-
         result = self._storage_client.update_node(payload)
 
-        return result.results()[0].about
+        storage_payload = StoragePayload()
+        storage_payload.about = result.results[0].about
+        storage_payload.add_type(EVENT.Event)
+        self._publisher.publish_update(storage_payload)
+
+        return result.results[0].about
 
     def _convert_segment_to_payload(self, session):
         """
         Convert the segment details into a payload object.
         :return:
         """
-        payload = self._storage_client.create_payload()
+        payload = StoragePayload()
         payload.add_type(EVENT.Event)
         payload.add_reference(key=EVENT.agent, value=self._owner)
         payload.add_property(RDFS.seeAlso, MOVES_SEGMENT[self._segment['startTime']])
