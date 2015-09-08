@@ -179,12 +179,10 @@ class UpdateService(base_plugin):
         promise = None
         for segment in session['segments']:
             if not promise:
-                execution = ProcessSegment(segment, session['owner'], self.xmpp['rho_bot_scheduler'],
-                                           self.xmpp['rho_bot_storage_client'], self.xmpp['rho_bot_rdf_publish'])
+                execution = ProcessSegment(segment, session['owner'], self.xmpp)
                 promise = self.xmpp['rho_bot_scheduler'].defer(execution)
             else:
-                execution = ProcessSegment(segment, session['owner'], self.xmpp['rho_bot_scheduler'],
-                                           self.xmpp['rho_bot_storage_client'], self.xmpp['rho_bot_rdf_publish'])
+                execution = ProcessSegment(segment, session['owner'], self.xmpp)
                 promise = promise.then(execution)
 
         # Save off the configuration details from this update cycle, and then resolve or reject the session promise.
