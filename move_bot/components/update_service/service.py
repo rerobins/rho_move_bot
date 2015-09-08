@@ -124,8 +124,8 @@ class UpdateService(base_plugin):
         def set_owner_session(owner):
             logger.info('Configuring session owner')
 
-            if owner:
-                session['owner'] = owner[0]
+            if owner.results:
+                session['owner'] = owner.results[0].about
             else:
                 raise RuntimeError('No owners defined')
 

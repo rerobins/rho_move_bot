@@ -130,7 +130,7 @@ class ProcessSegment:
             """
             Closure that will attempt to update the session variable based on the results of a promise lookup.
             """
-            session['location'] = result
+            session['location'] = [rdf.about for rdf in result.results]
 
             return session
 
