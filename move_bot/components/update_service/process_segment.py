@@ -154,10 +154,19 @@ class ProcessSegment:
             """
             update_payload = StoragePayload()
             update_payload.about = interval_uri
+            update_payload.add_type(TIMELINE.Interval)
             update_payload.add_property(TIMELINE.start, self._segment['startTime'])
             update_payload.add_property(TIMELINE.end, self._segment['endTime'])
 
-            return self._storage_client.update_node(update_payload)
+            result = self._storage_client.update_node(update_payload)
+
+            publish_payload = StoragePayload()
+            publish_payload.about = interval_uri
+            publish_payload.add_type(TIMELINE.Interval)
+
+            self._publisher.publish_update(publish_payload)
+
+            return result
 
         def _create_interval_object():
             """
@@ -168,7 +177,15 @@ class ProcessSegment:
             create_payload.add_property(TIMELINE.start, self._segment['startTime'])
             create_payload.add_property(TIMELINE.end, self._segment['endTime'])
 
-            return self._storage_client.create_node(create_payload)
+            result = self._storage_client.create_node(create_payload)
+
+            publish_payload = StoragePayload()
+            publish_payload.about = result.results[0].about
+            publish_payload.add_type(TIMELINE.Interval)
+
+            self._publisher.publish_create(publish_payload)
+
+            return result
 
         payload = StoragePayload()
         payload.about = self._node_id
@@ -202,6 +219,12 @@ class ProcessSegment:
 
         result = self._storage_client.create_node(create_payload)
 
+        publish_payload = StoragePayload()
+        publish_payload.about = result.results[0].about
+        publish_payload.add_type(TIMELINE.Interval)
+
+        self._publisher.publish_create(publish_payload)
+
         return _update_session(result)
 
     def _create_node(self, session):
@@ -214,7 +237,7 @@ class ProcessSegment:
         payload = self._convert_segment_to_payload(session)
         result = self._storage_client.create_node(payload)
 
-        storage_payload = self._storage_client.create_payload()
+        storage_payload = StoragePayload()
         storage_payload.about = result.results[0].about
         storage_payload.add_type(EVENT.Event)
         self._publisher.publish_create(storage_payload)
