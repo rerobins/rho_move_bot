@@ -4,6 +4,8 @@ Encapsulate the methodology to process a segment from the moves-api.
 Builds rdf triples based on:
 http://motools.sourceforge.net/event/event.html
 """
+from move_bot.components.update_service.interval_handler import IntervalHandler
+from move_bot.components.update_service.location_handler import LocationHandler
 from rhobot.components.storage import StoragePayload
 from move_bot.components.namespace import EVENT, MOVES_SEGMENT, WGS_84, LOCATION, SCHEMA, TIMELINE
 from rdflib.namespace import RDFS, DC, DCTERMS
@@ -35,9 +37,13 @@ class ProcessSegment:
         self._storage_client = xmpp['rho_bot_storage_client']
         self._promise = None
         self._publisher = xmpp['rho_bot_rdf_publish']
+        self._representation_manager = xmpp['rho_bot_representation_manager']
         self._owner = owner
         self._node_id = None
         self.xmpp = xmpp
+
+        self.interval_handler = IntervalHandler(xmpp)
+        self.location_handler = LocationHandler(xmpp, owner)
 
     def __call__(self, *args):
         """
@@ -46,6 +52,8 @@ class ProcessSegment:
         :param args:
         :return:
         """
+        logger.info('Processing segment: %s' % self._segment)
+
         self._promise = self._scheduler.promise()
 
         # Check in the database to see if there is anything that currently has the segment defined in it
@@ -53,17 +61,7 @@ class ProcessSegment:
         payload.add_type(EVENT.Event)
         payload.add_property(RDFS.seeAlso, MOVES_SEGMENT[self._segment['startTime']])
 
-        result = self._storage_client.find_nodes(payload)
-
-        task_promise = self._scheduler.defer(self._start_process).then(self._find_place)
-
-        if result.results:
-            self._node_id = result.results[0].about
-            task_promise = task_promise.then(self._get_interval).then(self._update_node)
-        else:
-            task_promise = task_promise.then(self._create_interval).then(self._create_node)
-
-        task_promise.then(self._finish_process, lambda s: self._promise.rejected(s))
+        self._storage_client.find_nodes(payload).then(self._handle_find_result)
 
         return self._promise
 
@@ -76,7 +74,20 @@ class ProcessSegment:
         self._promise.resolved(session)
         return None
 
-    def _start_process(self):
+    def _handle_find_result(self, result):
+        if result.results:
+            self._node_id = result.results[0].about
+            update_promise = self._scheduler.defer(self.start_session).then(self._find_place)
+            update_promise = update_promise.then(self._get_interval).then(self._update_node)
+            update_promise.then(self._finish_process, lambda s: self._promise.rejected(s))
+            return update_promise
+        else:
+            create_promise = self._scheduler.defer(self.start_session).then(self._find_place)
+            create_promise = create_promise.then(self._create_interval).then(self._create_node)
+            create_promise.then(self._finish_process, lambda s: self._promise.rejected(s))
+            return create_promise
+
+    def start_session(self):
         return dict()
 
     def _find_place(self, session):
@@ -85,117 +96,38 @@ class ProcessSegment:
         :param session:
         :return:
         """
-        if self._segment['place']['type'] == 'foursquare':
-            location_request = StoragePayload()
-            location_request.add_type(WGS_84.SpatialThing)
-            location_request.add_property(RDFS.seeAlso,
-                                          'foursquare://venues/%s' % self._segment['place']['foursquareId'])
-            promise = self._publisher.send_out_request(location_request).then(
-                self._generate_promise_foursquare(session))
+        logger.debug('Finding place: %s' % session)
+        location_promise = self.location_handler(self._segment['place']).then(
+            self._scheduler.generate_promise_handler(self._update_session, session, 'location'))
 
-        elif self._segment['place']['type'] == 'home':
-            # Ask the owner if it has an address
-            get_request = StoragePayload()
-            get_request.about = self._owner
-            result = self._storage_client.get_node(get_request)
-
-            if str(LOCATION.address) in result.references:
-                session['location'] = result.references[str(LOCATION.address)]
-            elif str(SCHEMA.homeLocation):
-                session['location'] = result.references[str(SCHEMA.homeLocation)]
-            else:
-                session['location'] = []
-
-            promise = self._scheduler.promise()
-            promise.resolved(session)
-        else:
-            session['location'] = []
-            promise = self._scheduler.promise()
-            promise.resolved(session)
-
-        return promise
-
-    def _generate_promise_foursquare(self, session):
-        """
-        Generate a promise listener that will find the locations retrieved by a lookup and then return the session
-        variable.
-        :param session:
-        :return:
-        """
-        def _promise_foursquare_location(result):
-            """
-            Closure that will attempt to update the session variable based on the results of a promise lookup.
-            """
-            session['location'] = [rdf.about for rdf in result.results]
-
-            return session
-
-        return _promise_foursquare_location
+        return location_promise
 
     def _get_interval(self, session):
         """
-        Look up the data on the node and see if there is an interval to be updated.
+        Get the event node to be updated, then update the interval object, and put the result into the session value.
         :param session: session variable.
         :return:
         """
-        def _get_interval_from_result(result_object):
-            """
-            Promise listener that will then fork and determine if the interval should be updated or created.
-            """
-            interval_reference = result_object.properties.get(EVENT.time, None)
+        logger.debug('Get Interval: %s' % session)
+
+        def update_interval(result):
+            interval_reference = result.references.get(str(EVENT.time), None)
+
             if interval_reference:
-                return _update_interval_object(interval_reference)
-            else:
-                return _create_interval_object()
+                interval_reference = interval_reference[0]
 
-        def _update_interval_object(interval_uri):
-            """
-            Update the interval uri provided based on the segment.
-            """
-            update_payload = StoragePayload()
-            update_payload.about = interval_uri
-            update_payload.add_type(TIMELINE.Interval)
-            update_payload.add_property(TIMELINE.start, self._segment['startTime'])
-            update_payload.add_property(TIMELINE.end, self._segment['endTime'])
-
-            result = self._storage_client.update_node(update_payload)
-
-            publish_payload = StoragePayload()
-            publish_payload.about = interval_uri
-            publish_payload.add_type(TIMELINE.Interval)
-
-            self._publisher.publish_update(publish_payload)
-
-            return result
-
-        def _create_interval_object():
-            """
-            Create a new interval object based on the segment.
-            """
-            create_payload = StoragePayload()
-            create_payload.add_type(TIMELINE.Interval)
-            create_payload.add_property(TIMELINE.start, self._segment['startTime'])
-            create_payload.add_property(TIMELINE.end, self._segment['endTime'])
-
-            result = self._storage_client.create_node(create_payload)
-
-            publish_payload = StoragePayload()
-            publish_payload.about = result.results[0].about
-            publish_payload.add_type(TIMELINE.Interval)
-
-            self._publisher.publish_create(publish_payload)
-
-            return result
+            interval_promise = self.interval_handler(interval_reference,
+                                                     self._segment['startTime'],
+                                                     self._segment['endTime'])
+            interval_promise = interval_promise.then(
+                self._scheduler.generate_promise_handler(self._update_session, session, 'interval'))
+            return interval_promise
 
         payload = StoragePayload()
         payload.about = self._node_id
 
-        get_result = self._storage_client.get_node(payload)
-        node_result = _get_interval_from_result(get_result)
-
-        session['interval'] = [rdf.about for rdf in node_result.results]
-
-        return session
+        promise = self._storage_client.get_node(payload).then(update_interval)
+        return promise
 
     def _create_interval(self, session):
         """
@@ -203,29 +135,20 @@ class ProcessSegment:
         :param session:
         :return:
         """
+        logger.debug('Create Interval: %s' % session)
+        interval_promise = self.interval_handler(None, self._segment['startTime'], self._segment['endTime'])
+        interval_promise = interval_promise.then(
+            self._scheduler.generate_promise_handler(self._update_session, session, 'interval'))
 
-        def _update_session(result):
-            """
-            Process the results of the creation.
-            """
-            session['interval'] = [rdf.about for rdf in result.results]
+        return interval_promise
 
-            return session
-
-        create_payload = StoragePayload()
-        create_payload.add_type(TIMELINE.Interval)
-        create_payload.add_property(TIMELINE.start, self._segment['startTime'])
-        create_payload.add_property(TIMELINE.end, self._segment['endTime'])
-
-        result = self._storage_client.create_node(create_payload)
-
-        publish_payload = StoragePayload()
-        publish_payload.about = result.results[0].about
-        publish_payload.add_type(TIMELINE.Interval)
-
-        self._publisher.publish_create(publish_payload)
-
-        return _update_session(result)
+    @staticmethod
+    def _update_session(interval_result, session, key):
+        """
+        Process the results of the creation.
+        """
+        session[key] = interval_result
+        return session
 
     def _create_node(self, session):
         """
@@ -235,14 +158,17 @@ class ProcessSegment:
         """
         logger.debug('Creating Node')
         payload = self._convert_segment_to_payload(session)
-        result = self._storage_client.create_node(payload)
 
-        storage_payload = StoragePayload()
-        storage_payload.about = result.results[0].about
-        storage_payload.add_type(EVENT.Event)
-        self._publisher.publish_create(storage_payload)
+        # Only set the title when first creating it.  The update might override a field that has been changed by the
+        # user.
+        place_name = self._segment['place'].get('name', 'Unknown')
+        payload.add_property(key=DC.title, value=place_name)
 
-        return result.results[0].about
+        promise = self._storage_client.create_node(payload).then(
+            self._scheduler.generate_promise_handler(self._publish_modifications, created=True)).then(
+            lambda s: s.results[0].about)
+
+        return promise
 
     def _update_node(self, session):
         """
@@ -251,15 +177,15 @@ class ProcessSegment:
         """
         logger.info('Updating Node')
         payload = self._convert_segment_to_payload(session)
+
+        # Update that about field so that the node can be updated.
         payload.about = self._node_id
-        result = self._storage_client.update_node(payload)
 
-        storage_payload = StoragePayload()
-        storage_payload.about = result.results[0].about
-        storage_payload.add_type(EVENT.Event)
-        self._publisher.publish_update(storage_payload)
+        promise = self._storage_client.update_node(payload).then(
+            self._scheduler.generate_promise_handler(self._publish_modifications, created=False)).then(
+            lambda s: s.results[0].about)
 
-        return result.results[0].about
+        return promise
 
     def _convert_segment_to_payload(self, session):
         """
@@ -269,7 +195,7 @@ class ProcessSegment:
         payload = StoragePayload()
         payload.add_type(EVENT.Event)
         payload.add_reference(key=EVENT.agent, value=self._owner)
-        payload.add_reference(key=DCTERMS.creator, value=self.xmpp.get_uri())
+        payload.add_reference(key=DCTERMS.creator, value=self._representation_manager.representation_uri)
         payload.add_property(RDFS.seeAlso, MOVES_SEGMENT[self._segment['startTime']])
 
         if session['location']:
@@ -278,7 +204,8 @@ class ProcessSegment:
         if session['interval']:
             payload.add_reference(key=EVENT.time, value=session['interval'][0])
 
-        place_name = self._segment['place'].get('name', 'Unknown')
-        payload.add_property(key=DC.title, value=place_name)
-
         return payload
+
+    def _publish_modifications(self, result, created=True):
+        self._publisher.publish_all_results(result, created=created)
+        return result

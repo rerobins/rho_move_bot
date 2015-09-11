@@ -35,6 +35,14 @@ class UpdateService(base_plugin):
         self.xmpp.add_event_handler(BotConfiguration.CONFIGURATION_RECEIVED_EVENT, self._configuration_updated)
         # self.xmpp.add_event_handler(OAUTH_DETAILS_UPDATED, self._configuration_updated)
 
+    def post_init(self):
+        super(UpdateService, self).post_init()
+
+        self._storage_client = self.xmpp['rho_bot_storage_client']
+        self._scheduler = self.xmpp['rho_bot_scheduler']
+        self._configuration = self.xmpp['rho_bot_configuration']
+        self._rdf_publish = self.xmpp['rho_bot_rdf_publish']
+
     def _configuration_updated(self, *args, **kwargs):
         """
         Callback when the configuration details have been received by the bot.
@@ -43,7 +51,7 @@ class UpdateService(base_plugin):
         :return:
         """
         logger.debug('Rescheduling task for time: %s' % self._delay)
-        self.xmpp['rho_bot_scheduler'].schedule_task(self._start, delay=self._delay, repeat=False)
+        self._scheduler.schedule_task(self._start, delay=self._delay, repeat=False)
 
     def _start(self):
         """
@@ -54,7 +62,7 @@ class UpdateService(base_plugin):
         access to all of the work that has been done before it.
         :return:
         """
-        promise = self.xmpp['rho_bot_scheduler'].defer(self._create_session)
+        promise = self._scheduler.defer(self._create_session)
         promise = promise.then(self._build_client)
         promise = promise.then(self._get_owner)
         promise = promise.then(self._get_data)
@@ -81,7 +89,7 @@ class UpdateService(base_plugin):
         :return:
         """
         logger.debug('Creating the client')
-        configuration = self.xmpp['rho_bot_configuration'].get_configuration()
+        configuration = self._configuration.get_configuration()
         identifier = configuration.get(IDENTIFIER_KEY, None)
         secret = configuration.get(CLIENT_SECRET_KEY, None)
         client_token = configuration.get(CLIENT_TOKEN_KEY, None)
@@ -91,7 +99,7 @@ class UpdateService(base_plugin):
             logger.error('Configuration is not defined')
             raise RuntimeError('Configuration is not defined')
 
-        if not self.xmpp['rho_bot_storage_client'].has_store():
+        if not self._storage_client.has_store():
             logger.error('Storage Client doesnt exist')
             raise RuntimeError('Storage Client doesn\'t exist')
 
@@ -131,7 +139,7 @@ class UpdateService(base_plugin):
 
             return session
 
-        return self.xmpp['rho_bot_rdf_publish'].send_out_request(payload).then(set_owner_session)
+        return self._rdf_publish.send_out_request(payload).then(set_owner_session)
 
     def _get_data(self, session):
         """
@@ -144,8 +152,8 @@ class UpdateService(base_plugin):
 
         parameters = dict(pastDays=self._past_days)
 
-        last_update = self.xmpp['rho_bot_configuration'].get_value(key='last_update', default=None,
-                                                                   persist_if_missing=False)
+        last_update = self._configuration.get_value(key='last_update', default=None,
+                                                    persist_if_missing=False)
         if last_update:
             parameters['updatedSince'] = last_update
             session['last_update'] = last_update
@@ -174,13 +182,13 @@ class UpdateService(base_plugin):
         :param session: session variable.
         :return: promise that will be resolved once all of the segments have been processed.
         """
-        session['promise'] = self.xmpp['rho_bot_scheduler'].promise()
+        session['promise'] = self._scheduler.promise()
 
         promise = None
         for segment in session['segments']:
             if not promise:
                 execution = ProcessSegment(segment, session['owner'], self.xmpp)
-                promise = self.xmpp['rho_bot_scheduler'].defer(execution)
+                promise = self._scheduler.defer(execution)
             else:
                 execution = ProcessSegment(segment, session['owner'], self.xmpp)
                 promise = promise.then(execution)
@@ -202,7 +210,7 @@ class UpdateService(base_plugin):
         :param session: session variable.
         :return: session variable
         """
-        self.xmpp['rho_bot_configuration'].merge_configuration({'last_update': session['last_update']})
+        self._configuration.merge_configuration({'last_update': session['last_update']})
 
         return session
 
