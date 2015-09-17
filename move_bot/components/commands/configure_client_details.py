@@ -1,42 +1,35 @@
 import logging
-from sleekxmpp.plugins.base import base_plugin
+from rhobot.components.commands.base_command import BaseCommand
 from move_bot.components.configuration_enums import IDENTIFIER_KEY, CLIENT_SECRET_KEY
 from move_bot.components.events import OAUTH_DETAILS_UPDATED
 
 
 logger = logging.getLogger(__name__)
 
-class ConfigureClientDetails(base_plugin):
+class ConfigureClientDetails(BaseCommand):
     """
     Plugin that will configure the client details for the service to connect to the google apis.
     """
 
     name = 'configure_client_details'
     description = 'Configure Client Details'
-    dependencies = {'xep_0050', 'rho_bot_configuration'}
+    dependencies = BaseCommand.default_dependencies.union({'rho_bot_configuration'})
 
-    def plugin_init(self):
-        self.xmpp.add_event_handler('session_start', self._start)
+    def post_init(self):
+        super(ConfigureClientDetails, self).post_init()
+        self._configuration = self.xmpp['rho_bot_configuration']
 
-    def _start(self, event):
-        """
-        Notify the command service of all commands that this plugin will provide.
-        :param event:
-        :return:
-        """
-        self.xmpp['xep_0050'].add_command(node=self.name, name='Configure Client Details', handler=self._starting_point)
-
-    def _starting_point(self, iq, initial_session):
+    def command_start(self, iq, initial_session):
         """
         Create the form that asks for the clientId, clientSecret,
         :param iq:
         :param initial_session:
         :return:
         """
-        form = self.xmpp['xep_0004'].make_form()
+        form = self._forms.make_form()
 
-        previous_identifier = self.xmpp['rho_bot_configuration'].get_value(IDENTIFIER_KEY, 'unset')
-        previous_secret = self.xmpp['rho_bot_configuration'].get_value(CLIENT_SECRET_KEY, 'unset')
+        previous_identifier = self._configuration.get_value(IDENTIFIER_KEY, 'unset')
+        previous_secret = self._configuration.get_value(CLIENT_SECRET_KEY, 'unset')
 
         form.add_field(var='client_id', ftype='text-single', label='Client Identifier',
                        desc='Client Identifier from Move API Console',
@@ -66,7 +59,7 @@ class ConfigureClientDetails(base_plugin):
 
         logger.info('Secret: %s, Identifier: %s' % (secret, identifier))
 
-        self.xmpp['rho_bot_configuration'].merge_configuration({IDENTIFIER_KEY: identifier, CLIENT_SECRET_KEY: secret})
+        self._configuration.merge_configuration({IDENTIFIER_KEY: identifier, CLIENT_SECRET_KEY: secret})
 
         session['has_next'] = False
         session['payload'] = None

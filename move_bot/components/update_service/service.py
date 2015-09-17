@@ -22,7 +22,8 @@ class UpdateService(base_plugin):
 
     name = 'update_service'
     description = 'Service that will update data store from move api'
-    dependencies = {'rho_bot_scheduler', 'rho_bot_configuration', 'rho_bot_rdf_publish', }
+    dependencies = {'rho_bot_storage_client', 'rho_bot_configuration', 'rho_bot_rdf_publish',
+                    'rho_bot_representation_manager', }
 
     _delay = 600.0
     _past_days = 31
@@ -33,7 +34,6 @@ class UpdateService(base_plugin):
         :return:
         """
         self.xmpp.add_event_handler(BotConfiguration.CONFIGURATION_RECEIVED_EVENT, self._configuration_updated)
-        # self.xmpp.add_event_handler(OAUTH_DETAILS_UPDATED, self._configuration_updated)
 
     def post_init(self):
         super(UpdateService, self).post_init()
