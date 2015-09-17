@@ -9,12 +9,9 @@ parser.add_option('-c', dest="filename", help="Configuration file for the bot", 
 configuration.load_file(options.filename)
 
 bot = RhoBot()
-bot.register_plugin('rho_bot_storage_client', module='rhobot.components')
 bot.register_plugin('configure_client_details', module='move_bot.components.commands')
 bot.register_plugin('configure_access_token', module='move_bot.components.commands')
-bot.register_plugin('rho_bot_rdf_publish', module='rhobot.components')
 bot.register_plugin('update_service', module='move_bot.components.update_service')
-bot.register_plugin('rho_bot_representation_manager', module='rhobot.components')
 
 # Connect to the XMPP server and start processing XMPP stanzas.
 if bot.connect():
