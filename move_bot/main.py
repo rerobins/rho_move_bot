@@ -15,9 +15,13 @@ parser.add_option('-c', dest="filename", help="Configuration file for the bot", 
 configuration.load_file(options.filename)
 
 bot = RhoBot()
+# Components
+bot.register_plugin('update_service')
+
+# Commands
 bot.register_plugin('configure_client_details')
 bot.register_plugin('configure_access_token')
-bot.register_plugin('update_service')
+bot.register_plugin('fetch_from_month')
 
 # Connect to the XMPP server and start processing XMPP stanzas.
 if bot.connect():

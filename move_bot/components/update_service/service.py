@@ -43,6 +43,20 @@ class UpdateService(base_plugin):
         self._configuration = self.xmpp['rho_bot_configuration']
         self._rdf_publish = self.xmpp['rho_bot_rdf_publish']
 
+    def fetch_for_month(self, date):
+        """
+        Fetch data from the moves api for the month provided.
+        :param date: datetime.date object
+        :return: promise
+        """
+        promise = self._scheduler.defer(self._create_session)
+        promise = promise.then(self._build_client)
+        promise = promise.then(self._get_owner)
+        promise = promise.then(self._scheduler.generate_promise_handler(self._get_month_data, date))
+        promise = promise.then(self._process_data)
+
+        return promise
+
     def _configuration_updated(self, *args, **kwargs):
         """
         Callback when the configuration details have been received by the bot.
@@ -159,6 +173,35 @@ class UpdateService(base_plugin):
             session['last_update'] = last_update
 
         results = session['client'].user_places_daily(**parameters)
+
+        logger.debug('Update Results: %s' % results)
+
+        for date_result in results:
+            segments = date_result['segments']
+
+            if session.get('last_update', None) is None or session['last_update'] < date_result['lastUpdate']:
+                session['last_update'] = date_result['lastUpdate']
+
+            if segments is not None:
+                for segment in segments:
+                    session['segments'].append(segment)
+
+        return session
+
+    def _get_month_data(self, session, date):
+        """
+        Retrieve the data from the API service and store them in the session variable.
+        :param session:
+        :param month: month
+        :param year: year
+        :return:
+        """
+        logger.debug('Task Executing: %s' % session)
+        session['segments'] = []
+
+        query_string = date.strftime('%Y%m')
+
+        results = session['client'].user_places_daily(query_string)
 
         logger.debug('Update Results: %s' % results)
 
