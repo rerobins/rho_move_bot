@@ -2,6 +2,7 @@ from rhobot.components.storage import StoragePayload
 from rhobot.namespace import WGS_84, LOCATION, SCHEMA
 from rdflib.namespace import RDFS
 
+
 class LocationHandler:
 
     def __init__(self, bot, owner):

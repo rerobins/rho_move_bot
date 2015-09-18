@@ -15,6 +15,7 @@ import logging
 logger = logging.getLogger(__name__)
 WGS84_POS_NAMESPACE = Namespace('http://www.w3.org/2003/01/geo/wgs84_pos#')
 
+
 class UpdateService(base_plugin):
     """
     Service that will create a group of promises that can be used to insert the data from the moves-app.com API.
@@ -192,8 +193,7 @@ class UpdateService(base_plugin):
         """
         Retrieve the data from the API service and store them in the session variable.
         :param session:
-        :param month: month
-        :param year: year
+        :param date:
         :return:
         """
         logger.debug('Task Executing: %s' % session)

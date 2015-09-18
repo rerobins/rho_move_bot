@@ -4,14 +4,17 @@ Encapsulate the methodology to process a segment from the moves-api.
 Builds rdf triples based on:
 http://motools.sourceforge.net/event/event.html
 """
-from move_bot.components.update_service.interval_handler import IntervalHandler
-from move_bot.components.update_service.location_handler import LocationHandler
-from rhobot.components.storage import StoragePayload
-from move_bot.components.namespace import EVENT, MOVES_SEGMENT, WGS_84, LOCATION, SCHEMA, TIMELINE
-from rdflib.namespace import RDFS, DC, DCTERMS
 import logging
 
+from rhobot.components.storage import StoragePayload
+
+from move_bot.components.update_service.interval_handler import IntervalHandler
+from move_bot.components.update_service.location_handler import LocationHandler
+from move_bot.components.namespace import EVENT, MOVES_SEGMENT
+from rdflib.namespace import RDFS, DC, DCTERMS
+
 logger = logging.getLogger(__name__)
+
 
 class ProcessSegment:
     """

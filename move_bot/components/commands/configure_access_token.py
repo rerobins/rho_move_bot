@@ -6,6 +6,7 @@ from move_bot.components.events import OAUTH_DETAILS_UPDATED
 
 logger = logging.getLogger(__name__)
 
+
 class ConfigureAccessToken(BaseCommand):
     """
     Plugin that will configure the client details for the service to connect to the google apis.
@@ -74,7 +75,7 @@ class ConfigureAccessToken(BaseCommand):
 
         self._configuration.merge_configuration({CLIENT_TOKEN_KEY: mc.access_token})
         # TODO: Submit merge request to get the refresh token as well
-        #self.xmpp['rho_bot_configuration'].merge_configuratoin({'refresh_token': mc.refresh_token})
+        # self.xmpp['rho_bot_configuration'].merge_configuration({'refresh_token': mc.refresh_token})
 
         session['has_next'] = False
         session['payload'] = None

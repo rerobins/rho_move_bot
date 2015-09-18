@@ -6,6 +6,7 @@ from move_bot.components.events import OAUTH_DETAILS_UPDATED
 
 logger = logging.getLogger(__name__)
 
+
 class ConfigureClientDetails(BaseCommand):
     """
     Plugin that will configure the client details for the service to connect to the google apis.
